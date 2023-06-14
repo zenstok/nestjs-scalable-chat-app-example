@@ -10,12 +10,6 @@ export type DecodedAuthToken = {
   iat: number;
 };
 
-enum RedisSubscribeChannel {
-  SendWsMessageToAllClients = 'send_ws_message_to_all_clients',
-  SendWsMessageToSomeClients = 'send_ws_message_to_some_clients',
-  SendWsMessageToOneClient = 'send_ws_message_to_one_client',
-}
-
 interface RedisPubSubMessage {
   from: string;
   message: string;
@@ -25,45 +19,29 @@ interface RedisPubSubMessageWithClientId extends RedisPubSubMessage {
   clientId: string;
 }
 
-interface RedisPubSubMessageWithClientIds extends RedisPubSubMessage {
-  clientIds: string[];
-}
-
 @Injectable()
 export class WsClientManager {
   private readonly logger = new Logger(this.constructor.name);
   private readonly connectedClients = new Map<string, any[]>();
+
   private readonly redisClientId = `ws_socket_client-${crypto.randomUUID()}`;
+  private readonly sendWsMessageToAllClientsRedisChannel = `send_ws_message_to_all_clients`;
+  private readonly wsSocketClientRedisChannel = `ws_socket_client`;
 
   constructor(
     @InjectRedis('subscriber') private readonly subscriberRedis: Redis,
     @InjectRedis('publisher') private readonly publisherRedis: Redis,
   ) {
-    this.subscriberRedis.subscribe(
-      RedisSubscribeChannel.SendWsMessageToAllClients,
-    );
-    this.subscriberRedis.subscribe(
-      RedisSubscribeChannel.SendWsMessageToSomeClients,
-    );
-    this.subscriberRedis.subscribe(
-      RedisSubscribeChannel.SendWsMessageToOneClient,
-    );
+    this.subscriberRedis.subscribe(this.sendWsMessageToAllClientsRedisChannel);
 
     this.subscriberRedis.on('message', (channel, message) => {
       const data = JSON.parse(message) as RedisPubSubMessage;
       if (data.from !== this.redisClientId) {
-        switch (channel) {
-          case RedisSubscribeChannel.SendWsMessageToAllClients:
+        switch (true) {
+          case channel === this.sendWsMessageToAllClientsRedisChannel:
             this.sendMessageToAllClients(data.message, false);
             break;
-          case RedisSubscribeChannel.SendWsMessageToSomeClients:
-            this.sendMessageToClients(
-              (data as RedisPubSubMessageWithClientIds).clientIds,
-              data.message,
-              false,
-            );
-            break;
-          case RedisSubscribeChannel.SendWsMessageToOneClient:
+          case channel.startsWith(this.wsSocketClientRedisChannel):
             this.sendMessageToClient(
               (data as RedisPubSubMessageWithClientId).clientId,
               data.message,
@@ -77,7 +55,9 @@ export class WsClientManager {
   }
 
   addConnection(client: any, authUserTokenData: DecodedAuthToken) {
-    this.logger.debug(`Add ws connection: ${authUserTokenData.email}`);
+    this.logger.debug(
+      `Add ws connection: ${authUserTokenData.email} on redis client id: ${this.redisClientId}`,
+    );
     const userId = authUserTokenData.sub;
 
     this.setUserIdOnClient(client, userId);
@@ -87,6 +67,8 @@ export class WsClientManager {
       clientsPool ? [...clientsPool, client] : [client],
     );
 
+    this.subscriberRedis.subscribe(this.getClientIdRedisChannel(userId));
+
     setTimeout(() => {
       client.close(); // will trigger removeConnection from lifecycle gateway handleDisconnect
     }, this.getConnectionLimit(authUserTokenData));
@@ -95,18 +77,24 @@ export class WsClientManager {
   removeConnection(client: any) {
     const clientsPool = this.getClientsPool(client);
 
-    if (clientsPool === undefined) {
+    if (!clientsPool) {
       return;
     }
-    this.logger.debug(`Remove ws connection: ${client.userId}`);
+    this.logger.debug(
+      `Remove ws connection: ${client.userId} from redis client id : ${this.redisClientId}`,
+    );
 
-    const newPool = clientsPool!.filter((c) => c !== client);
+    const newPool = clientsPool.filter((c) => c !== client);
 
     if (!newPool.length) {
       this.connectedClients.delete(client.userId);
     } else {
       this.connectedClients.set(client.userId, newPool);
     }
+
+    this.subscriberRedis.unsubscribe(
+      this.getClientIdRedisChannel(client.userId),
+    );
   }
 
   private setUserIdOnClient(client: any, userId: string) {
@@ -141,7 +129,7 @@ export class WsClientManager {
   ) {
     if (shouldPublishToRedis) {
       this.publisherRedis.publish(
-        RedisSubscribeChannel.SendWsMessageToOneClient,
+        this.getClientIdRedisChannel(clientId),
         JSON.stringify({
           message,
           clientId,
@@ -165,14 +153,16 @@ export class WsClientManager {
     shouldPublishToRedis = true,
   ) {
     if (shouldPublishToRedis) {
-      this.publisherRedis.publish(
-        RedisSubscribeChannel.SendWsMessageToSomeClients,
-        JSON.stringify({
-          message,
-          clientIds,
-          from: this.redisClientId,
-        }),
-      );
+      Array.from(new Set(clientIds)).forEach((clientId) => {
+        this.publisherRedis.publish(
+          this.getClientIdRedisChannel(clientId),
+          JSON.stringify({
+            message,
+            clientId,
+            from: this.redisClientId,
+          }),
+        );
+      });
     }
 
     this.connectedClients.forEach((clientPool, clientId) => {
@@ -187,7 +177,7 @@ export class WsClientManager {
   sendMessageToAllClients(message: string, shouldPublishToRedis = true) {
     if (shouldPublishToRedis) {
       this.publisherRedis.publish(
-        RedisSubscribeChannel.SendWsMessageToAllClients,
+        this.sendWsMessageToAllClientsRedisChannel,
         JSON.stringify({
           message,
           from: this.redisClientId,
@@ -200,5 +190,8 @@ export class WsClientManager {
         client.send(message);
       });
     });
+  }
+  private getClientIdRedisChannel(userId: string) {
+    return `${this.wsSocketClientRedisChannel}/${userId}`;
   }
 }
