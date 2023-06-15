@@ -42,6 +42,9 @@ export class WsClientManager {
             this.sendMessageToAllClients(data.message, false);
             break;
           case channel.startsWith(this.wsSocketClientRedisChannel):
+            this.logger.warn(
+              `I'm ${this.redisClientId} redis client. I'm subscribed to ${channel} which means i will also send the ws message to my ws clients.`,
+            );
             this.sendMessageToClient(
               (data as RedisPubSubMessageWithClientId).clientId,
               data.message,

@@ -3,3 +3,4 @@ node_modules
 dist
 .idea
 docker
+k8s
