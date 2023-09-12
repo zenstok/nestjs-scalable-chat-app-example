@@ -1,9 +1,52 @@
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: my-backendconfig
+spec:
+  timeoutSec: 120
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: ssl-redirect
+spec:
+  redirectToHttps:
+    enabled: true
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: managed-cert
+spec:
+  domains:
+    - subdomain.put-your-domain-here.com
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: tutorial-ip
+    networking.gke.io/managed-certificates: managed-cert
+    kubernetes.io/ingress.class: "gce"
+    networking.gke.io/v1beta1.FrontendConfig: ssl-redirect
+  labels:
+    app: backend
+spec:
+  defaultBackend:
+    service:
+      name: backend-service
+      port:
+        number: 3000
+---
 apiVersion: v1
 kind: Service
 metadata:
   name: backend-service
   labels:
     app: backend
+  annotations:
+    cloud.google.com/backend-config: '{"ports": {"3000":"my-backendconfig"}}'
 spec:
   type: NodePort
   selector:

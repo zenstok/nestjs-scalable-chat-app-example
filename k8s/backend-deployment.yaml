@@ -16,12 +16,29 @@ spec:
       labels:
         app: backend
     spec:
+# You need this only if you want to fetch a private image
+#      imagePullSecrets:
+#        - name: regcred
       restartPolicy: Always
       containers:
-        - image: zenstok/scalable-chat-app-example-backend
+        - image: zenstok/scalable-chat-app-example-backend:amd64
           name: scalable-chat-app-example-backend
           ports:
             - containerPort: 3000
+# Control resources used for pods using a config like this (make sure cluster has sufficient resources)
+#          resources:
+#            limits:
+#              cpu: "1000m"    # Maximum CPU limit
+#              memory: "1Gi"   # Maximum memory limit
+#            requests:
+#              cpu: "1000m"    # Minimum CPU request
+#              memory: "1Gi"   # Minimum memory request
+          readinessProbe:
+            httpGet:
+              path: "/health"
+              port: 3000
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
           env:
             - name: REDIS_HOST
               value: "redis-service"
