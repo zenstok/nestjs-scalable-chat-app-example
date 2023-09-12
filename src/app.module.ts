@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { WebsocketsModule } from './modules/websockets/websockets.module';
 import { RedisModule } from '@liaoliaots/nestjs-redis';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { RedisModule } from '@liaoliaots/nestjs-redis';
     UserModule,
     AuthModule,
     WebsocketsModule,
+    HealthModule,
   ],
   providers: [
     {
