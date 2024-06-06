@@ -33,4 +33,5 @@ This project is licensed under the [MIT License](https://en.wikipedia.org/wiki/M
 - Author - [zenstok](https://github.com/zenstok)
 - Twitter - [@zenstok](https://twitter.com/zenstok)
 - Blog - [https://rabbitbyte.club](https://rabbitbyte.club)
+- Email - rares.tarabega@yahoo.com
 
